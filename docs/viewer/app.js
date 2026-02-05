@@ -124,11 +124,26 @@ function renderMarkdown(md) {
   return html;
 }
 
+// Resolve docs assets relative to where this viewer is actually served from.
+// This avoids hard-coded absolute paths like `/docs/...`, which break on GitHub Pages
+// because repositories are hosted under `/<repo>/`.
+const VIEWER_BASE_URL = new URL(
+  (document.currentScript && document.currentScript.src) ? document.currentScript.src : window.location.href
+);
+
+function docsUrl(relPath) {
+  // viewer lives in `docs/viewer/`, so docs root is one directory up.
+  return new URL(`../${relPath}`, VIEWER_BASE_URL);
+}
+
+function repoUrl(relPath) {
+  // repo root is two directories up from `docs/viewer/`.
+  const clean = String(relPath ?? "").replace(/^\/+/, "");
+  return new URL(`../../${clean}`, VIEWER_BASE_URL);
+}
+
 async function loadManifest() {
-  // Use an absolute path so the viewer works whether opened as:
-  //   /docs/viewer/  or  /docs/viewer/index.html  or  /docs/viewer
-  // Some servers treat /docs/viewer as a file (no trailing slash), which breaks relative URLs.
-  const res = await fetch("/docs/manifest.json", { cache: "no-store" });
+  const res = await fetch(docsUrl("manifest.json"), { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load manifest: ${res.status}`);
   return await res.json();
 }
@@ -153,7 +168,7 @@ async function loadPage(path) {
     return;
   }
 
-  const res = await fetch("/docs/" + path, { cache: "no-store" });
+  const res = await fetch(docsUrl(path), { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load ${path}: ${res.status}`);
   const md = await res.text();
   document.getElementById("doc").innerHTML = renderMarkdown(md);
@@ -361,11 +376,11 @@ async function renderRunner() {
 
   let index;
   try {
-    const res = await fetch("/docs/em_index.json", { cache: "no-store" });
+    const res = await fetch(docsUrl("em_index.json"), { cache: "no-store" });
     if (!res.ok) throw new Error(String(res.status));
     index = await res.json();
   } catch (e) {
-    outEl.innerHTML = `<p>Failed to load <code>/docs/em_index.json</code>. Start a local server at repo root and open <code>/docs/viewer/</code>.</p>`;
+    outEl.innerHTML = `<p>Failed to load <code>em_index.json</code> next to the docs. If you're hosting on GitHub Pages, make sure the <code>docs/</code> folder is being published.</p>`;
     return;
   }
 
@@ -393,13 +408,13 @@ async function renderRunner() {
     if (!path) return;
     setStatus(`Loading ${path}…`);
     try {
-      const res = await fetch("/" + path, { cache: "no-store" });
+      const res = await fetch(repoUrl(path), { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       srcEl.value = await res.text();
       setStatus(path);
     } catch (e) {
       setStatus(`Failed to load ${path}`);
-      outEl.innerHTML = `<p>Failed to fetch <code>/${html(path)}</code>. Make sure your static server root is the repo root.</p>`;
+      outEl.innerHTML = `<p>Failed to fetch <code>${html(path)}</code>. If you're publishing only <code>docs/</code> on GitHub Pages, the repo sources (tests/examples) aren't available to the viewer.</p>`;
     }
   });
 

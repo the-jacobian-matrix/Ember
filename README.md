@@ -2,7 +2,7 @@
 
 EMP is a small C + LLVM-based compiler for the `.em` language in this repo.
 
-This README is written for **sharing with friends**. It covers:
+This README covers:
 
 - How to run EMP on Windows
 - How to build from source
@@ -196,5 +196,6 @@ The zip includes everything needed to run EMP and build `.exe` files **without**
 - **Link errors mentioning missing Win32 symbols**:
   - Fix: add the missing symbol to `winlib/kernel32.def`, rebuild so `kernel32.lib` is regenerated.
   - If the API is not in `kernel32.dll`, we’ll add another import lib (e.g. `user32`).
+
 
 

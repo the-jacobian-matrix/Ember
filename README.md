@@ -115,18 +115,6 @@ The resulting compiler is:
 
 EMP uses LLVM via the **LLVM C API** and also shells out to LLVM tools (`llc`, `lld-link`, `lli`).
 
-### Option A (easy): keep the bundled LLVM folder
-
-This repo can include a folder like:
-
-- `llvm-21.1.8-windows-amd64-msvc17-msvcrt/`
-
-If this folder exists, the build defaults to using it.
-
-### Option B (what you asked for): do NOT upload LLVM; have friends download it
-
-If you remove the `llvm-21.1.8-windows-amd64-msvc17-msvcrt/` folder before sharing the repo, **building EMP from source will fail** until LLVM is provided.
-
 To build without the bundled LLVM folder:
 
 1. Download a Windows x64 LLVM build that includes:
@@ -208,3 +196,4 @@ The zip includes everything needed to run EMP and build `.exe` files **without**
 - **Link errors mentioning missing Win32 symbols**:
   - Fix: add the missing symbol to `winlib/kernel32.def`, rebuild so `kernel32.lib` is regenerated.
   - If the API is not in `kernel32.dll`, we’ll add another import lib (e.g. `user32`).
+

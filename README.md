@@ -25,7 +25,7 @@ EMP is **not** a finished, cross-platform, stable language yet, but it is usable
 
 ## Quick start (using the portable zip)
 
-If you have a prebuilt zip (for example `dist/emp-win64.zip`), extract it and run:
+If you have a prebuilt zip (form the releases), extract it and run:
 
 - Run a program via JIT (no link step):
   - `emp.exe --run path\to\program.em`
@@ -196,4 +196,5 @@ The zip includes everything needed to run EMP and build `.exe` files **without**
 - **Link errors mentioning missing Win32 symbols**:
   - Fix: add the missing symbol to `winlib/kernel32.def`, rebuild so `kernel32.lib` is regenerated.
   - If the API is not in `kernel32.dll`, we’ll add another import lib (e.g. `user32`).
+
 

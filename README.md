@@ -6,7 +6,7 @@ This README covers:
 
 - How to run EMP on Windows
 - How to build from source
-- How LLVM is handled (and how to set it up if it’s not included)
+- How LLVM is handled 
 - How native `.exe` output works **without requiring the Windows SDK**
 
 ## Status (what works)
@@ -196,6 +196,7 @@ The zip includes everything needed to run EMP and build `.exe` files **without**
 - **Link errors mentioning missing Win32 symbols**:
   - Fix: add the missing symbol to `winlib/kernel32.def`, rebuild so `kernel32.lib` is regenerated.
   - If the API is not in `kernel32.dll`, we’ll add another import lib (e.g. `user32`).
+
 
 
 

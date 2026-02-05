@@ -1,285 +1,210 @@
+# EMP Compiler (Windows x64)
 
----
+EMP is a small C + LLVM-based compiler for the `.em` language in this repo.
 
-# Ember Design Overview
+This README is written for **sharing with friends**. It covers:
 
-## What is Ember?
+- How to run EMP on Windows
+- How to build from source
+- How LLVM is handled (and how to set it up if it’s not included)
+- How native `.exe` output works **without requiring the Windows SDK**
 
-**Ember** is a statically typed, compiled programming language with modern syntax and strong type inference. It is designed to be expressive, efficient, and fast, with a strong emphasis on developer ergonomics.
+## Status (what works)
 
-The Ember compiler is initially written in **C** and uses **LLVM** as a backend to generate highly optimized machine code.
+- The compiler runs on **Windows x64**.
+- The repo test suite currently passes on Windows x64 (see `tests/run_tests.ps1`).
+- EMP can:
+  - tokenize (`--lex`)
+  - parse and print AST (`--ast`)
+  - emit JSON AST + diagnostics (`--json`)
+  - emit LLVM IR (`--ll` / `--nobin`)
+  - produce a native Windows `.exe` (default mode when you pass a file)
+  - run via LLVM `lli` (`--run`)
 
----
+EMP is **not** a finished, cross-platform, stable language yet, but it is usable on Windows.
 
-## Key Goals
+## Quick start (using the portable zip)
 
-### Performance
+If you have a prebuilt zip (for example `dist/emp-win64.zip`), extract it and run:
 
-* Minimal runtime overhead
-* Strong type inference for optimal memory and instruction layout
+- Run a program via JIT (no link step):
+  - `emp.exe --run path\to\program.em`
 
-### Safety
+- Emit LLVM IR:
+  - `emp.exe --nobin --out out\program.ll path\to\program.em`
 
-* Ownership / Borrowing system
-* Compiler-enforced checks
+- Build a native Windows executable:
+  - `emp.exe path\to\program.em`
+  - Output goes to `out\bin\<name>.exe` by default
 
-### Freedom
+### Runtime prerequisites
 
-* Disable checks with `@ember off`
-* Allows:
+On some machines, Windows may require the **Microsoft Visual C++ Redistributable (x64)** for `emp.exe` to start.
 
-  * Raw memory access
-  * Unsafe concurrency
-  * Undefined behavior
+## First program (recommended)
 
-### Modern Ergonomics
+This is the easiest way to get a working project layout.
 
-* Clear type inference (`auto`)
-* Flexible multithreading with `@ember parallel`
-* High-level abstractions
+### 1) Create a project
 
----
+From the folder that contains `emp.exe`:
 
-## Memory Management
+- `emp.exe new hello_emp`
+- `cd hello_emp`
 
-### Safe Mode (default)
+This creates:
 
-* Ownership and borrowing enforced
-* Automatic checks for common issues
+- `emp.toml`
+- `src\main.em`
+- `emp_mods\` (for vendored modules)
+- `.gitignore`
 
-### Zig Mode (`@ember off`)
+### 2) Paste a tiny “hello world” (uses the stdlib)
 
-* All runtime checks disabled
-* Programmer handles memory and safety
-* Maximum performance with minimal overhead
+Open `src\main.em` and replace it with:
 
----
+```emp
+use {println} from std.console;
 
-## Multithreading
-
-Ember supports **both automatic and explicit multithreading**.
-
-* **Automatic multithreading** via `@ember parallel`
-* **Explicit multithreading** with full manual control
-* Both approaches can be mixed freely
-
----
-
-## Libraries
-
-* Strong standard library
-* Built-in support for:
-
-  * IO
-  * Math
-  * Graphics
-  * And more
-
----
-
-## Why Build Ember?
-
-> AI can’t be better at a programming language that I made.
-> In addition, it seems feasible, and I need a project for **Flavortown**.
-
----
-
-## Example Code (Safe Mode)
-
-```ember
-// ==========================================================
-// Neural Network Example in Ember
-// ==========================================================
-
-// Allow parallel execution for training loops
-@ember parallel  
-
-// Random number generator (simple)
-fn randFloat() -> float {
-    return float(rand() % 1000) / 1000.0
-}
-
-// Activation function
-fn sigmoid(float x) -> float {
-    return 1.0 / (1.0 + exp(-x))
-}
-
-fn sigmoidDerivative(float x) -> float {
-    return x * (1.0 - x)
-}
-
-// ==========================================================
-// Layer object
-// ==========================================================
-
-object Layer {
-    int inputSize
-    int outputSize
-    auto weights     // 2D array: outputSize x inputSize
-    auto biases      // 1D array: outputSize
-
-    fn init(int inSize, int outSize) -> Layer layer {
-        layer.inputSize = inSize
-        layer.outputSize = outSize
-
-        layer.weights = new float[outSize][inSize]
-        layer.biases = new float[outSize]
-
-        // Randomly initialize weights and biases
-        for i in 0..outSize {
-            for j in 0..inSize {
-                layer.weights[i][j] = randFloat() - 0.5
-            }
-            layer.biases[i] = randFloat() - 0.5
-        }
-    }
-
-    fn forward(auto input) -> float output[] {
-        auto output = new float[outputSize]
-
-        for i in 0..outputSize {
-            float sum = 0.0
-            for j in 0..inputSize {
-                sum += input[j] * weights[i][j]
-            }
-            sum += biases[i]
-            output[i] = sigmoid(sum)
-        }
-        return output
-    }
+fn main() -> i32 {
+  println("Hello from EMP!");
+  return 0;
 }
 ```
 
----
+### 3) Build + run
 
-## Neural Network (Safe Mode)
+- Build a native Windows executable:
+  - `..\emp.exe src\main.em`
 
-```ember
-object NeuralNetwork {
-    Layer hidden
-    Layer output
-    float learningRate
+- Run it:
+  - `./out/bin/main.exe`
 
-    fn init(int inputSize, int hiddenSize, int outputSize, float lr) -> NeuralNetwork nn {
-        nn.hidden = Layer.init(inputSize, hiddenSize)
-        nn.output = Layer.init(hiddenSize, outputSize)
-        nn.learningRate = lr
-    }
+If you don’t want to link a `.exe` (or you’re using Wine), you can run via LLVM instead:
 
-    fn predict(auto input) -> float[] {
-        auto hiddenOutput = hidden.forward(input)
-        auto finalOutput = output.forward(hiddenOutput)
-        return finalOutput
-    }
+- `..\emp.exe --run src\main.em`
 
-    fn train(auto inputs, auto targets, int epochs) {
-        for epoch in 0..epochs {
+Notes:
 
-            // Parallel training per sample
-            for index, input in inputs {
-                auto target = targets[index]
+- `std.console` works because the portable zip bundles `stdlib\` next to `emp.exe`.
+- Output exe naming is currently based on the input filename (`main.em` → `main.exe`).
 
-                // Forward pass
-                auto hiddenOutput = hidden.forward(input)
-                auto finalOutput = output.forward(hiddenOutput)
+## Building from source (Windows)
 
-                // Compute output error
-                auto outputErrors = new float[output.outputSize]
-                for i in 0..output.outputSize {
-                    outputErrors[i] = target[i] - finalOutput[i]
-                }
+### Requirements
 
-                // Backpropagation - output layer
-                auto outputGrad = new float[output.outputSize]
-                for i in 0..output.outputSize {
-                    outputGrad[i] = outputErrors[i] * sigmoidDerivative(finalOutput[i])
-                    for j in 0..hidden.outputSize {
-                        output.weights[i][j] += learningRate * outputGrad[i] * hiddenOutput[j]
-                    }
-                    output.biases[i] += learningRate * outputGrad[i]
-                }
+- Windows 10/11
+- Visual Studio Build Tools 2022 (MSVC)
+- CMake
 
-                // Backpropagation - hidden layer
-                auto hiddenErrors = new float[hidden.outputSize]
-                for i in 0..hidden.outputSize {
-                    float errorSum = 0.0
-                    for j in 0..output.outputSize {
-                        errorSum += outputGrad[j] * output.weights[j][i]
-                    }
-                    hiddenErrors[i] = errorSum
-                }
+### Configure + build
 
-                auto hiddenGrad = new float[hidden.outputSize]
-                for i in 0..hidden.outputSize {
-                    hiddenGrad[i] = hiddenErrors[i] * sigmoidDerivative(hiddenOutput[i])
-                    for j in 0..hidden.inputSize {
-                        hidden.weights[i][j] += learningRate * hiddenGrad[i] * input[j]
-                    }
-                    hidden.biases[i] += learningRate * hiddenGrad[i]
-                }
-            }
-        }
-    }
-}
-```
+From the repo root:
 
----
+- Configure:
+  - `cmake --preset make-x64`
 
-## Unsafe Mode Example (`@ember off`)
+- Build (Release recommended for sharing):
+  - `cmake --build --preset make-x64-release`
 
-> **Warning:** This mode disables all safety checks.
-> You are responsible for memory, correctness, and thread safety.
+The resulting compiler is:
 
-```ember
-@ember off  
+- `out\build\make-x64\Release\emp.exe`
 
-object Layer {
-    int inputSize
-    int outputSize
-    auto* weights     // raw pointer to 2D array
-    auto* biases      // raw pointer to 1D array
+## LLVM dependency (important)
 
-    fn init(int inSize, int outSize) -> Layer layer {
-        layer.inputSize = inSize
-        layer.outputSize = outSize
+EMP uses LLVM via the **LLVM C API** and also shells out to LLVM tools (`llc`, `lld-link`, `lli`).
 
-        layer.weights = alloc<float>(outSize * inSize)
-        layer.biases = alloc<float>(outSize)
+### Option A (easy): keep the bundled LLVM folder
 
-        for i in 0..outSize {
-            for j in 0..inSize {
-                layer.weights[i * inSize + j] = randFloat() - 0.5
-            }
-            layer.biases[i] = randFloat() - 0.5
-        }
-    }
+This repo can include a folder like:
 
-    fn forward(auto* input) -> float* {
-        auto* output = alloc<float>(outputSize)
+- `llvm-21.1.8-windows-amd64-msvc17-msvcrt/`
 
-        for i in 0..outputSize {
-            float sum = 0.0
-            for j in 0..inputSize {
-                sum += input[j] * weights[i * inputSize + j]
-            }
-            sum += biases[i]
-            output[i] = sigmoid(sum)
-        }
-        return output
-    }
-}
-```
+If this folder exists, the build defaults to using it.
 
----
+### Option B (what you asked for): do NOT upload LLVM; have friends download it
 
-## Summary
+If you remove the `llvm-21.1.8-windows-amd64-msvc17-msvcrt/` folder before sharing the repo, **building EMP from source will fail** until LLVM is provided.
 
-Ember is designed to sit at the intersection of:
+To build without the bundled LLVM folder:
 
-* **Rust-level safety**
-* **Zig-level control**
-* **Modern, expressive syntax**
-* **High-performance compiled execution**
+1. Download a Windows x64 LLVM build that includes:
+   - headers: `include/llvm-c/Core.h`
+   - import lib: `lib/LLVM-C.lib`
+   - runtime DLL: `bin/LLVM-C.dll`
+   - tools: `bin/llc.exe`, `bin/lld-link.exe`, `bin/lli.exe`, `bin/llvm-dlltool.exe`
 
-With optional guard rails, Ember lets developers choose **how safe** or **how fast** they want to be per file, per function, or per project.
+2. Extract LLVM somewhere (example):
+   - `C:\deps\llvm-21.1.8-windows-amd64-msvc17-msvcrt\...`
 
+3. Point CMake at it by setting the cache variable:
+   - `cmake --preset make-x64 -DEMP_LLVM_ROOT=C:\deps\llvm-21.1.8-windows-amd64-msvc17-msvcrt`
+
+That’s it—then run the normal build preset.
+
+## Native `.exe` output WITHOUT the Windows SDK
+
+We **do not** require the Windows SDK to link programs.
+
+Instead, EMP generates and ships a tiny `kernel32.lib` import library, built from a `.def` file:
+
+- `winlib/kernel32.def`
+
+CMake uses `llvm-dlltool.exe` (from LLVM) to generate:
+
+- `kernel32.lib`
+
+…and copies it next to `emp.exe`. When `emp.exe` links your program, it prefers that local `kernel32.lib`.
+
+Design note:
+
+- See `NO_WINDOWS_SDK.md`
+
+## Packaging a zip to share
+
+After building Release, you can create a shareable zip like this:
+
+- `powershell -ExecutionPolicy Bypass -File tools\package.ps1 -BuildDir out/build/make-x64 -Config Release`
+
+This produces:
+
+- `dist\emp-win64\` folder
+- `dist\emp-win64.zip`
+
+The zip includes everything needed to run EMP and build `.exe` files **without** the Windows SDK:
+
+- `emp.exe`
+- `LLVM-C.dll`
+- `llc.exe`, `lld-link.exe`, `lli.exe`
+- `kernel32.lib`
+- bundled `stdlib/`
+
+## Running tests
+
+- `powershell -ExecutionPolicy Bypass -File tests\run_tests.ps1`
+
+## Documentation
+
+- Markdown docs: `docs/`
+- Viewer (serve the repo root):
+  - `python -m http.server 8000`
+  - open: `http://localhost:8000/docs/viewer/`
+
+## Wine (Linux/macOS)
+
+- Running `emp.exe` under Wine may work.
+- If `emp.exe` doesn’t start, your Wine prefix may need the MSVC runtime (often via `winetricks vcrun2022`).
+- Building native `.exe` should work under Wine **as long as** the zip includes `kernel32.lib` next to `emp.exe`.
+
+## Troubleshooting
+
+- **"LLVM backend not enabled"**: you built without LLVM-C available.
+  - Fix: provide LLVM and set `EMP_LLVM_ROOT` at configure time.
+
+- **"LLVM tools missing"** (llc/lld-link/lli):
+  - Fix: keep `llc.exe`, `lld-link.exe`, `lli.exe` next to `emp.exe` (the packager does this).
+
+- **Link errors mentioning missing Win32 symbols**:
+  - Fix: add the missing symbol to `winlib/kernel32.def`, rebuild so `kernel32.lib` is regenerated.
+  - If the API is not in `kernel32.dll`, we’ll add another import lib (e.g. `user32`).

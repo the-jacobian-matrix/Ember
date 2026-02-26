@@ -192,6 +192,12 @@ The zip includes everything needed to run EMP and build `.exe` files **without**
 
 - `powershell -ExecutionPolicy Bypass -File tests\run_tests.ps1`
 
+## New example: NN shard-worker layout
+
+- `examples/nn_threaded_batch.em` demonstrates a thread-ready neural-net batch inference layout using 4 worker shards.
+- In this checkout, shard workers run sequentially because `std.thread` is not yet stabilized here.
+- Once thread spawn/join lands, those 4 shard calls can be replaced with real parallel workers.
+
 ## Documentation
 
 - Markdown docs: `docs/`

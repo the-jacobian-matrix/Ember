@@ -220,3 +220,30 @@ The zip includes everything needed to run EMP and build `.exe` files **without**
 
 
 
+
+## Releasing downloadable builds
+
+This repo now includes a release bundler and GitHub release workflow.
+
+### Local bundle (manual)
+
+If you already have a built compiler binary, create a downloadable archive:
+
+```bash
+tools/release_bundle.sh --binary ./emp --target linux-x64 --version v0.1.0
+```
+
+Output:
+
+- `dist/emp-<target>-<version>.tar.gz`
+- `dist/emp-<target>-<version>.tar.gz.sha256`
+
+### GitHub Release (automated)
+
+Use **Actions → release → Run workflow** and set:
+
+- `version` (e.g. `v0.1.0`)
+- `binary_path` (path to your prebuilt `emp`/`emp.exe` in the workspace)
+- `target` (e.g. `linux-x64`, `windows-x64`)
+
+The workflow uploads the tarball + checksum as release assets.

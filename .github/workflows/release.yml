@@ -1,0 +1,69 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version/tag label (e.g. v0.1.0)"
+        required: true
+        default: "v0.1.0"
+      binary_path:
+        description: "Path to prebuilt binary inside repo workspace (e.g. ./emp or ./out/bin/emp.exe)"
+        required: true
+        default: "./emp"
+      target:
+        description: "Target label (e.g. linux-x64, windows-x64)"
+        required: true
+        default: "linux-x64"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  bundle-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "binary=${{ inputs.binary_path }}" >> "$GITHUB_OUTPUT"
+            echo "target=${{ inputs.target }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "binary=./emp" >> "$GITHUB_OUTPUT"
+            echo "target=linux-x64" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate binary exists
+        shell: bash
+        run: |
+          test -f "${{ steps.meta.outputs.binary }}" || {
+            echo "Prebuilt binary not found at: ${{ steps.meta.outputs.binary }}" >&2
+            echo "Build the compiler first, or run workflow_dispatch with binary_path set correctly." >&2
+            exit 1
+          }
+
+      - name: Create downloadable bundle
+        shell: bash
+        run: |
+          tools/release_bundle.sh \
+            --binary "${{ steps.meta.outputs.binary }}" \
+            --target "${{ steps.meta.outputs.target }}" \
+            --version "${{ steps.meta.outputs.version }}"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.version }}
+          files: |
+            dist/*.tar.gz
+            dist/*.sha256
+          generate_release_notes: true

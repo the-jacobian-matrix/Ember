@@ -13,6 +13,21 @@
 #include <stdarg.h>
 #include <string.h>
 
+#ifndef _WIN32
+#include <errno.h>
+#include <limits.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
+#ifdef _WIN32
+#define EMP_PATH_SEP '\\'
+#else
+#define EMP_PATH_SEP '/'
+#endif
+
 #ifdef _WIN32
 #include <io.h>
 #include <process.h>
@@ -61,7 +76,9 @@ static bool dir_exists(const char *path) {
     if (attrs == INVALID_FILE_ATTRIBUTES) return false;
     return (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
 #else
-    return false;
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+    return S_ISDIR(st.st_mode);
 #endif
 }
 
@@ -105,7 +122,6 @@ static int cmd_new(int argc, char **argv) {
         return 1;
     }
 
-#ifdef _WIN32
     if (!ensure_dir(name)) {
         fprintf(stderr, "Failed to create project directory: %s\n", name);
         return 1;
@@ -133,10 +149,18 @@ static int cmd_new(int argc, char **argv) {
         "This project was scaffolded by `emp new`.\n\n"
         "## Build + run (native exe)\n\n"
         "From this folder:\n\n"
+#ifdef _WIN32
         "- Build: `emp.exe src/main.em`\n"
+#else
+        "- Build: `emp src/main.em`\n"
+#endif
         "- Run: `./out/bin/main.exe`\n\n"
         "## Emit LLVM IR only\n\n"
+#ifdef _WIN32
         "- `emp.exe --nobin --out out/main.ll src/main.em`\n";
+#else
+        "- `emp --nobin --out out/main.ll src/main.em`\n";
+#endif
 
     const char *gitignore_txt =
         "out/\n";
@@ -197,22 +221,26 @@ static int cmd_new(int argc, char **argv) {
     printf("Created EMP project: %s\n", name);
     printf("Next:\n");
     printf("  cd %s\n", name);
-    printf("  emp.exe src\\main.em\n");
-    printf("  .\\out\\bin\\main.exe\n");
-    return 0;
+#ifdef _WIN32
+    printf("  emp.exe src/main.em\n");
 #else
-    fprintf(stderr, "emp new is currently implemented for Windows only in this repo\n");
-    return 1;
+    printf("  emp src/main.em\n");
 #endif
+    printf("  ./out/bin/main.exe\n");
+    return 0;
 }
 
-#ifdef _WIN32
 static bool ensure_dir(const char *path) {
     if (!path || !path[0]) return false;
     if (dir_exists(path)) return true;
+#ifdef _WIN32
     if (CreateDirectoryA(path, NULL)) return true;
     DWORD err = GetLastError();
     return err == ERROR_ALREADY_EXISTS;
+#else
+    if (mkdir(path, 0777) == 0) return true;
+    return errno == EEXIST;
+#endif
 }
 
 static bool ensure_dir_recursive(const char *path) {
@@ -245,10 +273,14 @@ static bool ensure_dir_recursive(const char *path) {
 }
 
 static char *get_exe_dir_abs(void) {
+#ifdef _WIN32
     char buf[MAX_PATH];
     DWORD n = GetModuleFileNameA(NULL, buf, (DWORD)sizeof(buf));
     if (n == 0 || n >= sizeof(buf)) return NULL;
     return path_dirname_dup(buf);
+#else
+    return NULL;
+#endif
 }
 
 static bool slice_starts_with_cstr(EmpSlice s, const char *prefix) {
@@ -346,6 +378,7 @@ static char *path_basename_noext(const char *path) {
 }
 
 static char *find_windows_kits_um_x64(void) {
+#ifdef _WIN32
     // Best-effort discovery of Windows SDK import libs (kernel32.lib).
     // Typical path: C:\Program Files (x86)\Windows Kits\10\Lib\<ver>\um\x64
     const char *root = "C:\\Program Files (x86)\\Windows Kits\\10\\Lib";
@@ -383,7 +416,38 @@ static char *find_windows_kits_um_x64(void) {
     char out[MAX_PATH];
     snprintf(out, sizeof(out), "%s\\%s\\um\\x64", root, best_ver);
     return xstrdup(out);
+#else
+    return NULL;
+#endif
 }
+
+#ifndef _WIN32
+static bool find_in_path(const char *name, char *out, size_t out_cap) {
+    if (!name || !name[0] || !out || out_cap == 0) return false;
+    const char *path = getenv("PATH");
+    if (!path || !path[0]) return false;
+
+    size_t nn = strlen(name);
+    const char *cur = path;
+    while (*cur) {
+        const char *sep = strchr(cur, ':');
+        size_t dn = sep ? (size_t)(sep - cur) : strlen(cur);
+        if (dn > 0) {
+            size_t need = dn + 1 + nn + 1;
+            if (need <= out_cap) {
+                memcpy(out, cur, dn);
+                out[dn] = '/';
+                memcpy(out + dn + 1, name, nn);
+                out[dn + 1 + nn] = '\0';
+                if (access(out, X_OK) == 0) return true;
+            }
+        }
+        if (!sep) break;
+        cur = sep + 1;
+    }
+    return false;
+}
+#endif
 
 static bool arg_needs_quotes(const char *s) {
     if (!s) return false;
@@ -403,6 +467,8 @@ static void cmd_append(char *dst, size_t dst_cap, const char *s) {
 
 static intptr_t spawn_wait(const char *exe, const char *const *args) {
     if (!exe || !args) return -1;
+
+#ifdef _WIN32
 
     // Build a command line: "exe" arg1 arg2 ...
     // This is a minimal quoting strategy (sufficient for file paths with spaces).
@@ -452,9 +518,21 @@ static intptr_t spawn_wait(const char *exe, const char *const *args) {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     return (intptr_t)code;
-}
-#endif
+#else
+    pid_t pid = fork();
+    if (pid < 0) return (intptr_t)(-2);
+    if (pid == 0) {
+        execvp(exe, (char *const *)args);
+        _exit(127);
+    }
 
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) return (intptr_t)(-3);
+    if (WIFEXITED(status)) return (intptr_t)WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return (intptr_t)(128 + WTERMSIG(status));
+    return (intptr_t)(-4);
+#endif
+}
 typedef struct StrVec {
     char **items;
     size_t len;
@@ -580,7 +658,7 @@ static char *path_join2(const char *a, const char *b) {
     if (!out) return NULL;
     memcpy(out, a, na);
     size_t pos = na;
-    if (need_sep) out[pos++] = '\\';
+    if (need_sep) out[pos++] = EMP_PATH_SEP;
     memcpy(out + pos, b, nb);
     out[pos + nb] = '\0';
     return out;
@@ -607,11 +685,11 @@ static char *module_slice_to_rel_path(EmpSlice module_path) {
     for (size_t i = 0; i < module_path.len; i++) {
         char ch = module_path.ptr[i];
         if (ch == '.') {
-            out[j++] = '\\';
+            out[j++] = EMP_PATH_SEP;
             continue;
         }
         if (ch == ':' && i + 1 < module_path.len && module_path.ptr[i + 1] == ':') {
-            out[j++] = '\\';
+            out[j++] = EMP_PATH_SEP;
             i++;
             continue;
         }
@@ -1932,7 +2010,7 @@ int main(int argc, char **argv) {
         // Dev/test convenience: when running from the repo root, prefer the checked-in
         // stdlib at ./stdlib/emp_mods over the copied snapshot next to emp.exe.
         // This keeps edits to stdlib modules immediately visible to the compiler.
-        char *cwd_emp_mods = abs_path_dup("stdlib\\emp_mods");
+        char *cwd_emp_mods = abs_path_dup("stdlib/emp_mods");
         if (cwd_emp_mods && dir_exists(cwd_emp_mods)) {
             free(bundled_emp_mods);
             bundled_emp_mods = cwd_emp_mods;
@@ -2121,26 +2199,21 @@ int main(int argc, char **argv) {
                         exit_code = 1;
                     }
                 } else {
-#ifdef _WIN32
-                    // Build an exe using bundled llc + lld-link (kernel32 only).
                     (void)ensure_dir("out");
-                    (void)ensure_dir("out\\bin");
+                    (void)ensure_dir("out/bin");
 
                     char *base = path_basename_noext(path);
                     char *ll_path = NULL;
                     char *obj_path = NULL;
                     char *exe_path = NULL;
 
-                    // Choose output exe name.
-                    if (out_path) {
-                        exe_path = xstrdup(out_path);
-                    } else {
+#ifdef _WIN32
+                    if (out_path) exe_path = xstrdup(out_path);
+                    else {
                         char tmp[MAX_PATH];
                         snprintf(tmp, sizeof(tmp), "out\\bin\\%s.exe", base ? base : "emp");
                         exe_path = xstrdup(tmp);
                     }
-
-                    // Intermediate files.
                     {
                         char tmp[MAX_PATH];
                         snprintf(tmp, sizeof(tmp), "out\\%s.ll", base ? base : "emp");
@@ -2148,9 +2221,28 @@ int main(int argc, char **argv) {
                         snprintf(tmp, sizeof(tmp), "out\\%s.obj", base ? base : "emp");
                         obj_path = xstrdup(tmp);
                     }
+#else
+                    if (out_path) exe_path = xstrdup(out_path);
+                    else {
+                        char tmp[PATH_MAX];
+                        snprintf(tmp, sizeof(tmp), "out/bin/%s", base ? base : "emp");
+                        exe_path = xstrdup(tmp);
+                    }
+                    {
+                        char tmp[PATH_MAX];
+                        snprintf(tmp, sizeof(tmp), "out/%s.ll", base ? base : "emp");
+                        ll_path = xstrdup(tmp);
+                        snprintf(tmp, sizeof(tmp), "out/%s.o", base ? base : "emp");
+                        obj_path = xstrdup(tmp);
+                    }
+#endif
 
                     FILE *irf = NULL;
+#ifdef _WIN32
                     if (ll_path) fopen_s(&irf, ll_path, "wb");
+#else
+                    if (ll_path) irf = fopen(ll_path, "wb");
+#endif
                     if (!irf) {
                         fprintf(stderr, "Failed to open IR temp file: %s\n", ll_path ? ll_path : "<null>");
                         exit_code = 1;
@@ -2167,7 +2259,7 @@ int main(int argc, char **argv) {
                     }
 
                     if (exit_code == 0) {
-                        // Locate tools.
+#ifdef _WIN32
 #ifndef EMP_LLVM_ROOT
 #define EMP_LLVM_ROOT "llvm-21.1.8-windows-amd64-msvc17-msvcrt"
 #endif
@@ -2180,14 +2272,12 @@ int main(int argc, char **argv) {
                             fprintf(stderr, "LLVM tools missing (llc.exe/lld-link.exe). Check EMP_LLVM_ROOT.\n");
                             exit_code = 1;
                         } else {
-                            // llc: .ll -> .obj
                             const char *llc_args[] = {llc_exe, "-filetype=obj", "-o", obj_path, ll_path, NULL};
                             intptr_t rc1 = spawn_wait(llc_exe, llc_args);
                             if (rc1 != 0) {
                                 fprintf(stderr, "llc failed with code %lld\n", (long long)rc1);
                                 exit_code = 1;
                             } else {
-                                // lld-link: .obj -> .exe (kernel32 only)
                                 char *um_x64 = find_windows_kits_um_x64();
                                 if (!um_x64) {
                                     fprintf(stderr, "Failed to locate Windows SDK libs (kernel32.lib). Install Windows 10 SDK via VS Installer.\n");
@@ -2199,18 +2289,7 @@ int main(int argc, char **argv) {
                                     snprintf(outarg, sizeof(outarg), "/OUT:%s", exe_path);
                                     snprintf(libpatharg, sizeof(libpatharg), "/LIBPATH:%s", um_x64);
                                     snprintf(entryarg, sizeof(entryarg), "/ENTRY:mainCRTStartup");
-
-                                    const char *link_args[] = {
-                                        lld_exe,
-                                        "/NOLOGO",
-                                        "/SUBSYSTEM:CONSOLE",
-                                        entryarg,
-                                        outarg,
-                                        libpatharg,
-                                        obj_path,
-                                        "kernel32.lib",
-                                        NULL};
-
+                                    const char *link_args[] = {lld_exe, "/NOLOGO", "/SUBSYSTEM:CONSOLE", entryarg, outarg, libpatharg, obj_path, "kernel32.lib", NULL};
                                     intptr_t rc2 = spawn_wait(lld_exe, link_args);
                                     if (rc2 != 0) {
                                         fprintf(stderr, "lld-link failed with code %lld\n", (long long)rc2);
@@ -2220,16 +2299,40 @@ int main(int argc, char **argv) {
                                 }
                             }
                         }
+#else
+                        char llc[PATH_MAX];
+                        char lld[PATH_MAX];
+                        const char *llc_exe = NULL;
+                        const char *lld_exe = NULL;
+                        if (find_in_path("llc", llc, sizeof(llc))) llc_exe = llc;
+                        if (find_in_path("ld.lld", lld, sizeof(lld))) lld_exe = lld;
+                        else if (find_in_path("lld", lld, sizeof(lld))) lld_exe = lld;
+
+                        if (!llc_exe || !lld_exe) {
+                            fprintf(stderr, "LLVM tools missing (llc and ld.lld/lld). Install llvm/lld on Ubuntu.\n");
+                            exit_code = 1;
+                        } else {
+                            const char *llc_args[] = {llc_exe, "-filetype=obj", "-relocation-model=pic", "-o", obj_path, ll_path, NULL};
+                            intptr_t rc1 = spawn_wait(llc_exe, llc_args);
+                            if (rc1 != 0) {
+                                fprintf(stderr, "llc failed with code %lld\n", (long long)rc1);
+                                exit_code = 1;
+                            } else {
+                                const char *link_args[] = {lld_exe, "-pie", "-dynamic-linker", "/lib64/ld-linux-x86-64.so.2", "/usr/lib/x86_64-linux-gnu/Scrt1.o", "/usr/lib/x86_64-linux-gnu/crti.o", obj_path, "-lc", "/usr/lib/x86_64-linux-gnu/crtn.o", "-o", exe_path, NULL};
+                                intptr_t rc2 = spawn_wait(lld_exe, link_args);
+                                if (rc2 != 0) {
+                                    fprintf(stderr, "lld failed with code %lld\n", (long long)rc2);
+                                    exit_code = 1;
+                                }
+                            }
+                        }
+#endif
                     }
 
                     free(base);
                     free(ll_path);
                     free(obj_path);
                     free(exe_path);
-#else
-                    fprintf(stderr, "Native exe emission is currently implemented for Windows only. Use --nobin to emit LLVM IR.\n");
-                    exit_code = 1;
-#endif
                 }
 
                 emp_vec_free(&merged_program.items);

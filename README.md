@@ -1,17 +1,17 @@
-# EMP Compiler (Windows x64)
+# EMP Compiler (Windows x64 + Ubuntu)
 
 EMP is a small C + LLVM-based compiler for the `.em` language in this repo.
 
 This README covers:
 
-- How to run EMP on Windows
+- How to run EMP on Windows and Ubuntu
 - How to build from source
 - How LLVM is handled 
 - How native `.exe` output works **without requiring the Windows SDK**
 
 ## Status (what works)
 
-- The compiler runs on **Windows x64**.
+- The compiler runs on **Windows x64** and supports Linux/Ubuntu workflows for `--run`, `--ll`, and `--nobin`.
 - The repo test suite currently passes on Windows x64 (see `tests/run_tests.ps1`).
 - EMP can:
   - tokenize (`--lex`)
@@ -21,7 +21,26 @@ This README covers:
   - produce a native Windows `.exe` (default mode when you pass a file)
   - run via LLVM `lli` (`--run`)
 
-EMP is **not** a finished, cross-platform, stable language yet, but it is usable on Windows.
+EMP is **not** a finished, cross-platform, stable language yet, but it is usable on Windows and Ubuntu.
+
+## Ubuntu support status (important)
+
+On Ubuntu, current support is **frontend + LLVM IR/JIT workflows**:
+
+- `emp --run path/to/program.em` (runs via `lli`)
+- `emp --nobin --out out/program.ll path/to/program.em`
+
+Current status:
+
+- Native Ubuntu/Linux ELF linking is now supported through an LLVM toolchain flow (`llc` + `ld.lld`/`lld`).
+- The Linux linker path currently targets x86_64 glibc startup objects and is intended for Ubuntu-class environments.
+
+## Runtime and stdlib status
+
+- EMP is designed to be mostly runtime-light (no managed VM/GC runtime described here).
+- The `std` surface in this checkout is still small/minimal compared with a full language stdlib.
+- Available modules in-repo today are primarily under `emp_mods/` (for example `io/console`, `math/basic`, `collections/list`, `platform/c`).
+- For richer cross-platform `std` (OS wrappers, networking, etc.), this repo documents roadmap/checklist items but they are not all implemented yet.
 
 ## Quick start (using the portable zip)
 
@@ -47,16 +66,17 @@ This is the easiest way to get a working project layout.
 
 ### 1) Create a project
 
-From the folder that contains `emp.exe`:
+From the folder that contains `emp.exe` (Windows) or `emp` (Ubuntu):
 
-- `emp.exe new hello_emp`
+- Windows: `emp.exe new hello_emp`
+- Ubuntu: `emp new hello_emp`
 - `cd hello_emp`
 
 This creates:
 
 - `emp.toml`
-- `src\main.em`
-- `emp_mods\` (for vendored modules)
+- `src/main.em`
+- `emp_mods/` (for vendored modules)
 - `.gitignore`
 
 ### 2) Paste a tiny “hello world” (uses the stdlib)
